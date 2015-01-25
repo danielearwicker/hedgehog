@@ -1,5 +1,5 @@
 var express = require('express');
-var bodyParser = require('body-parser')
+var bodyParser = require('body-parser');
 var xml = require('./xml.js');
 var fs = require('fs');
 var path = require('path');
@@ -51,37 +51,43 @@ var libraryPath = process.argv[2];
 
 recurseFiles(libraryPath, function(filePath, done) {
     var parser = musicmetadata(fs.createReadStream(filePath));
-    parser.on('metadata', function (result) {
-
-        var relPath = filePath.substr(libraryPath.length);
-        if (relPath[0] === '/') {
-            relPath = relPath.substr(1);
-        }
-        
-        var afterCoverArt = function() {            
-            metabase.push(result);
-            done();
-        };
-        
-        var pictureData = result.picture && result.picture[0];
-        if (pictureData) {
-            var imageName = relPath.replace(/\//g, '_');
-            imageName += "." + pictureData.format;        
-            fs.writeFile(path.join(metabasePath, imageName), pictureData.data, err(function() {
-                result.coverart = imageName;
-                delete result.picture;
-                afterCoverArt();
-            }));
-            
-        } else {
-            delete result.picture;
-            afterCoverArt();
-        }        
+    var metadata;
+    parser.on('metadata', function(result) {
+        metadata = result;
     });
-    parser.on('done', function(err) {
-        if (err) {
-            console.log(err);
+        
+    parser.on('done', function(ex) {
+        if (ex) {
+            console.log(ex);
             done();
+        } else if (!metadata) {
+            console.log("No metadata extracted");
+            done();
+        } else { 
+            var relPath = filePath.substr(libraryPath.length);
+            if (relPath[0] === '/') {
+                relPath = relPath.substr(1);
+            }
+            
+            var afterCoverArt = function () {
+                metabase.push(metadata);
+                done();
+            };
+            
+            var pictureData = metadata.picture && metadata.picture[0];
+            if (pictureData) {
+                var imageName = relPath.replace(/[\\\/]/g, '_');
+                imageName += "." + pictureData.format;
+                fs.writeFile(path.join(metabasePath, imageName), pictureData.data, err(function () {
+                    metadata.coverart = imageName;
+                    delete metadata.picture;
+                    afterCoverArt();
+                }));
+            
+            } else {
+                delete metadata.picture;
+                afterCoverArt();
+            }
         }
     });
 }, function() {
