@@ -16,19 +16,22 @@ function err(action) {
 }
 
 function recurseFiles(p, each, done) {
-    
+    console.log("Statting " + p);
     fs.stat(p, err(function(s) {
         if (s.isDirectory()) {
+            console.log("Entering directory " + p);
             fs.readdir(p, err(function(ar) {
                 var n = 0;
                 function step() {
                     if (n === ar.length) {
+                        console.log("Leaving directory " + p);
                         done();
                     } else {
                         var child = ar[n++];
                         if (child[0] !== ".") {
                             recurseFiles(path.join(p, child), each, step);
                         } else {
+                            console.log("Skipping pseudo-file " + child);
                             step();
                         }
                     }
@@ -36,6 +39,7 @@ function recurseFiles(p, each, done) {
                 step();
             }));
         } else {
+            console.log("Processing file " + p);
             each(p, done);
         }
     }));
@@ -54,8 +58,7 @@ recurseFiles(libraryPath, function(filePath, done) {
             relPath = relPath.substr(1);
         }
         
-        var afterCoverArt = function() {
-            console.log(result.artist + ' - ' + result.title);
+        var afterCoverArt = function() {            
             metabase.push(result);
             done();
         };
@@ -74,6 +77,12 @@ recurseFiles(libraryPath, function(filePath, done) {
             delete result.picture;
             afterCoverArt();
         }        
+    });
+    parser.on('done', function(err) {
+        if (err) {
+            console.log(err);
+            done();
+        }
     });
 }, function() {
     console.log("Saving metabase");
