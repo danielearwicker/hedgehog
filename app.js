@@ -41,14 +41,45 @@ function recurseFiles(p, each, done) {
     }));
 }
 
-recurseFiles(process.argv[2], function(filePath, done) {
+var metabase = [];
+var metabasePath = path.join(__dirname, "metabase");
+var libraryPath = process.argv[2];
+
+recurseFiles(libraryPath, function(filePath, done) {
     var parser = musicmetadata(fs.createReadStream(filePath));
     parser.on('metadata', function (result) {
-      console.log(result);
-      done();
+
+        var relPath = filePath.substr(libraryPath.length);
+        if (relPath[0] === '/') {
+            relPath = relPath.substr(1);
+        }
+        
+        var afterCoverArt = function() {
+            console.log(result.artist + ' - ' + result.title);
+            metabase.push(result);
+            done();
+        };
+        
+        var pictureData = result.picture && result.picture[0];
+        if (pictureData) {
+            var imageName = relPath.replace(/\//g, '_');
+            imageName += "." + pictureData.format;        
+            fs.writeFile(path.join(metabasePath, imageName), pictureData.data, err(function() {
+                result.coverart = imageName;
+                delete result.picture;
+                afterCoverArt();
+            }));
+            
+        } else {
+            delete result.picture;
+            afterCoverArt();
+        }        
     });
 }, function() {
-    console.log("DONE!");
+    console.log("Saving metabase");
+    fs.writeFile(path.join(metabasePath, "metabase.json"), JSON.stringify(metabase, null, 4), err(function() {
+        console.log("Done");
+    }));
 });
 
 var app = express();
