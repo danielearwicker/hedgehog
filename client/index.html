@@ -1,0 +1,55 @@
+<html>
+<head>
+    <script type="text/javascript" src="jquery-2.1.3.min.js"></script>
+    <script type="text/javascript" src="knockout-3.2.0.js"></script>
+    <style>
+    div, span, input {
+        font-family: Helvetica;
+        font-size: 20px;
+    }
+    .search, .results {
+        text-align: center;
+    }
+    .index {
+        display: inline-block;
+        vertical-align: top;
+        margin: 8px;
+    }
+    .hit {
+        margin: 3px;
+        padding: 4px;
+        border: 1px solid silver;
+        background: #e0f1ff;
+        text-align: left;
+    }
+    .hit > * {
+        vertical-align: middle;
+    }
+    .hit img {
+        width: 32px;
+        height: 32px;
+        margin-right: 8px;
+    }
+    </style>
+        
+</head>
+<body>
+    <div class="search">
+        <input type="text" data-bind="textInput: searchText"></input>
+    </div>  
+    
+    <div class="results" data-bind="foreach: searchResults">
+        <div class="index">
+            <div data-bind="text: index"></div>                
+            <div data-bind="foreach: hits">
+                <div class="hit">
+                    <img data-bind="attr: { src: imageSource }">
+                    <span data-bind="text: caption"></span>
+                </div>
+            </div>
+        <div>
+    </div>
+    
+    <script type="text/javascript" src="index.js"></script>
+</body>
+</html>
