@@ -1,10 +1,12 @@
-var express = require('express');
-var bodyParser = require('body-parser');
-var xml = require('./xml.js');
-var fs = require('fs');
-var path = require('path');
-var musicmetadata = require('musicmetadata');
-var mime = require('mime');
+
+
+var express = require("express");
+var bodyParser = require("body-parser");
+var xml = require("./xml.js");
+var fs = require("fs");
+var path = require("path");
+var musicmetadata = require("musicmetadata");
+var mime = require("mime");
 
 function recurseFiles(p, each, done) {
     fs.stat(p, function(err, s) {
@@ -48,6 +50,10 @@ if (!fs.existsSync(coverartPath)) {
 
 var libraryPath = process.argv[2];
 
+if (!libraryPath) {
+    throw new Error("No library path specified");
+}
+
 var metabaseFile = path.join(metabasePath, "metabase.json");
 var metabase = [];
 var indices = {};
@@ -84,7 +90,7 @@ fs.readFile(metabaseFile, function(err, metabaseJson) {
     console.log("Scanning library for changes...");
     recurseFiles(libraryPath, function(filePath, done) {
         var relPath = filePath.substr(libraryPath.length);
-        if (relPath[0] === '/') {
+        if (relPath[0] === "/") {
             relPath = relPath.substr(1);
         }
         if (metabaseByPath[relPath]) {
@@ -95,10 +101,10 @@ fs.readFile(metabaseFile, function(err, metabaseJson) {
         changes = true;
         var parser = musicmetadata(fs.createReadStream(filePath));
         var metadata;
-        parser.on('metadata', function(result) {
+        parser.on("metadata", function(result) {
             metadata = result;
         });
-        parser.on('done', function(ex) {
+        parser.on("done", function(ex) {
             var finish = function () {
                 fs.stat(filePath, function(err, s) {
                     if (!err) {
@@ -125,7 +131,7 @@ fs.readFile(metabaseFile, function(err, metabaseJson) {
                     delete metadata.picture;
 
                     // Only keep one image per folder, as this is almost always correct
-                    var imageName = path.dirname(relPath).replace(/[\\\/]/g, '_');
+                    var imageName = path.dirname(relPath).replace(/[\\\/]/g, "_");
                     imageName += "." + pictureData.format;
                     var imagePath = path.join(coverartPath, imageName);
 
@@ -183,76 +189,115 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 function api(name, func) {
-    app.get('/' + name, function(req, res) {
+    app.get("/" + name, function(req, res) {
         res.set("Content-Type", "application/json");
         res.send(JSON.stringify(func(req.query, req), null, 2));
     });
 }
 
-app.get('/coverart', function(req, res) {
+app.get("/coverart", function(req, res) {
     var p = path.join(coverartPath, req.query.name);  
     res.setHeader("Content-Type", mime.lookup(p));
     fs.createReadStream(p).pipe(res);    
 });
 
-api('query', function(args) {
-    if (!args.value) {
-        return {
-            info: "Specify url parameter: value (optionally: index, skip, take)",
-            stats: {
-                items: metabase.length,
-                indices: Object.keys(indices).map(function(index) {
-                    return { index: index };
-                })
-            }
-        };
-    }
+var mainIndexNames = ["genre", "artist", "album", "title"];
 
-    var lowerVal = args.value.toLowerCase();
+function makeResults(args, handler) {
     var results = {};
     
-    var indexNames = args.index ? [args.index.toLowerCase()] : ["artist","album","title","genre"];
-    indexNames.forEach(function(indexName) {
-        var index = indices[indexName];
-        if (!index) {
-            return { error: "No such index: " + indexName };
-        }
-
-        var skip = parseInt(args.skip || "0", 10), take = parseInt(args.take || "20", 10);
-
+    mainIndexNames.forEach(function(indexName) {
+        
+        var skip = parseInt(args.skip || "0", 10), take = parseInt(args.take || "100", 10);
         var hits = [];
-        for (var key in index) {
-            if (take === 0) {
-                break;
+        
+        handler(indexName, function(value, coverart, id) {
+            if (skip > 0) {
+                skip--;
+                return true;
             }
-            if (key.toLowerCase().indexOf(lowerVal) !== -1) {
-                if (skip > 0) {
-                    skip--;
-                } else {
-                    take--;
-                    
-                    var coverart;
-                    index[key].some(function(item) {
-                        return !!(coverart = item.coverart);
-                    });
-                    
-                    hits.push({
-                        value: key,
-                        coverart: coverart
-                    });
-                }
+            if (take <= 0) {
+                return false;
             }
-        }
+            take--;
+            hits.push(id 
+                ? { value: value, coverart: coverart, id: id } 
+                : { value: value, coverart: coverart });
+            return take > 0;
+        });
+        
         if (hits.length > 0) {
             results[indexName] = hits;
         }
     });
     
     return results;
+}
+
+api("fetch", function(args) {
+    if (!args.type || !args.name) {
+        throw new Error("Requires type, name parameters");
+    }
+    
+    if (args.type === "id") {
+        if (!isNaN(parseInt(args.name))) {
+            var item = metabase[args.name];            
+            return makeResults(args, function(indexName, add) {
+                var vals = item[indexName];
+                if (!Array.isArray(vals)) {
+                    vals = [vals];
+                }
+                vals.forEach(function(val) {
+                    add(val, item.coverart, indexName === "album" ? path.dirname(item.path) : null);
+                });
+            });
+        } else {
+            
+        }
+    }
+});
+
+api("query", function(args) {
+    if (!args.value) {
+        throw new Error("Requires value parameter");
+    }
+
+    var lowerVal = args.value.toLowerCase();
+    
+    return makeResults(args, function(indexName, add) {
+        var index = indices[indexName];
+        
+        for (var key in index) {
+            if (key.toLowerCase().indexOf(lowerVal) !== -1) {
+
+                var items = index[key];
+
+                if (indexName === "title") {
+                    items.forEach(function(item) {
+                        add(key, item.coverart, item.id);
+                    });
+                } else if (indexName === "album") {
+                    var byFolder = {};
+                    items.forEach(function(item) {
+                        var itemFolderId = path.dirname(item.path);
+                        if (!byFolder[itemFolderId]) {
+                            add(key, item.coverart, itemFolderId);
+                        }
+                    });
+                } else {
+                    var coverart;
+                    items.some(function(item) {
+                        return !!(coverart = item.coverart);
+                    });
+                    add(key, coverart);
+                }
+            }
+        }
+    });
 });
 
 app.use(express.static(__dirname + "/client"));
 
 var port = 3002;
 app.listen(port);
-console.log('Server running at http://127.0.0.1:' + port + '/');
+console.log("Server running at http://127.0.0.1:" + port + "/");
