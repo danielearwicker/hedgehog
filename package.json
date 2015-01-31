@@ -1,5 +1,5 @@
 {
-  "name": "hedgehog",
+  "name": "spiny",
   "version": "0.0.1",
   "description": "JS/node implementation of subsonic server",
   "main": "app.js",
@@ -17,13 +17,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/danielearwicker/hedgehog.git"
+    "url": "https://github.com/danielearwicker/spiny.git"
   },
   "keywords": [
     "subsonic"
   ],
   "bugs": {
-    "url": "https://github.com/danielearwicker/hedgehog/issues"
+    "url": "https://github.com/danielearwicker/spiny/issues"
   },
-  "homepage": "https://github.com/danielearwicker/hedgehog"
+  "homepage": "https://github.com/danielearwicker/spiny"
 }
