@@ -190,8 +190,9 @@ app.use(bodyParser.json());
 
 function api(name, func) {
     app.get("/" + name, function(req, res) {
+        var result = func(req.query, req);
         res.set("Content-Type", "application/json");
-        res.send(JSON.stringify(func(req.query, req), null, 2));
+        res.send(JSON.stringify(result, null, 2));
     });
 }
 
@@ -199,6 +200,17 @@ app.get("/coverart", function(req, res) {
     var p = path.join(coverartPath, req.query.name);  
     res.setHeader("Content-Type", mime.lookup(p));
     fs.createReadStream(p).pipe(res);    
+});
+
+app.get("/stream", function(req, res) {
+    var item = metabase[req.query.id];
+    if (!item) {
+        res.status(500).send('Bad id');
+    } else {
+        var p = path.join(libraryPath, item.path);
+        res.setHeader("Content-Type", mime.lookup(p));
+        fs.createReadStream(p).pipe(res);
+    }
 });
 
 var mainIndexNames = ["genre", "artist", "album", "title"];
@@ -211,7 +223,7 @@ function makeResults(args, handler) {
         var skip = parseInt(args.skip || "0", 10), take = parseInt(args.take || "100", 10);
         var hits = [];
         
-        handler(indexName, function(value, coverart, id) {
+        handler(indexName, function(value, coverart, item) {
             if (skip > 0) {
                 skip--;
                 return true;
@@ -220,9 +232,16 @@ function makeResults(args, handler) {
                 return false;
             }
             take--;
-            hits.push(id 
-                ? { value: value, coverart: coverart, id: id } 
-                : { value: value, coverart: coverart });
+
+            var result = { value: value, coverart: coverart };
+            if (item) {
+                ["id", "album", "artist", "title"].forEach(function(property) {
+                    var vals = item[property];
+                    result[property] = Array.isArray(vals) ? vals[0] : vals;
+                });
+            }
+
+            hits.push(result);
             return take > 0;
         });
         
@@ -234,27 +253,56 @@ function makeResults(args, handler) {
     return results;
 }
 
+function forValuesIn(item, property, handler) {
+    var vals = item[property];
+    if (!Array.isArray(vals)) {
+        handler(vals);
+    } else {
+        vals.forEach(handler);
+    }
+}
+
 api("fetch", function(args) {
     if (!args.type || !args.name) {
         throw new Error("Requires type, name parameters");
     }
     
     if (args.type === "id") {
-        if (!isNaN(parseInt(args.name))) {
-            var item = metabase[args.name];            
-            return makeResults(args, function(indexName, add) {
-                var vals = item[indexName];
-                if (!Array.isArray(vals)) {
-                    vals = [vals];
-                }
-                vals.forEach(function(val) {
-                    add(val, item.coverart, indexName === "album" ? path.dirname(item.path) : null);
-                });
-            });
-        } else {
-            
+        var item = metabase[args.name];
+        if (!item) {
+            return {};
         }
+        return makeResults(args, function(indexName, add) {
+            forValuesIn(item, indexName, function(val) {
+                add(val, item.coverart);
+            });
+        });
     }
+    
+    var index = indices[args.type];
+    if (!index) {
+        return {};
+    }
+    var items = index[args.name];
+    if (!items) {
+        return {};
+    }
+    return makeResults(args, function(indexName, add) {
+        var values = {};                
+        items.forEach(function(item) {
+            var itemFolder = path.dirname(item.path);
+            forValuesIn(item, indexName, function(val) {
+                var valKey = val;
+                if (indexName === "title") {
+                    valKey += "/" + itemFolder;
+                }
+                if (!values[valKey]) {
+                    values[valKey] = true;
+                    add(val, item.coverart, indexName === "title" ? item : null);
+                }
+            });
+        });         
+    });
 });
 
 api("query", function(args) {
@@ -274,15 +322,7 @@ api("query", function(args) {
 
                 if (indexName === "title") {
                     items.forEach(function(item) {
-                        add(key, item.coverart, item.id);
-                    });
-                } else if (indexName === "album") {
-                    var byFolder = {};
-                    items.forEach(function(item) {
-                        var itemFolderId = path.dirname(item.path);
-                        if (!byFolder[itemFolderId]) {
-                            add(key, item.coverart, itemFolderId);
-                        }
+                        add(key, item.coverart, item);
                     });
                 } else {
                     var coverart;
@@ -298,6 +338,6 @@ api("query", function(args) {
 
 app.use(express.static(__dirname + "/client"));
 
-var port = 3002;
+var port = 3003;
 app.listen(port);
 console.log("Server running at http://127.0.0.1:" + port + "/");

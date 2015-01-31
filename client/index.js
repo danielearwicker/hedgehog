@@ -17,13 +17,50 @@ function synchronize(init, obs) {
     return latest;
 };
 
+var editableSearchText = ko.observable("");
 var searchText = ko.observable("");
 
-function addressChange() {
-    searchText(decodeURIComponent(window.location.hash.substr(1)));
+ko.computed(function() {
+    var oldText = decodeURIComponent(window.location.hash.substr(1));
+    var newText = editableSearchText().trim();
+    if (oldText != newText) {
+        console.log("Updating hash because " + oldText + " != " + newText);
+        window.location.hash = '#' + newText;
+    }
+}).extend({ throttle: 500 });
+
+window.addEventListener("hashchange", function() {
+    var newText = decodeURIComponent(window.location.hash.substr(1));
+    searchText(newText);
+    editableSearchText(newText);
+}, false);
+
+var playerQueue = ko.observableArray();
+var nowPlaying = ko.observable();
+
+function queue(track) {
+    if (!track.id) {
+        return;
+    }
+    var details = $.extend({}, track, {
+        caption: track.value,
+        imageSource: track.coverart
+            ? "coverart?name=" + encodeURIComponent(track.coverart)
+            : "missingart.png",
+        stream: "stream?id=" + track.id
+    });
+    if (nowPlaying()) {
+        playerQueue.push(details);
+    } else {
+        nowPlaying(details);
+    }
 }
 
-window.addEventListener("hashchange", addressChange, false);
+function queueAlbum(album) {
+    $.get("fetch?type=album&name=" + encodeURIComponent(album.value)).done(function(results) {
+        results.title.forEach(queue);
+    });
+}
 
 var searchResults = synchronize([], ko.computed(function() {
     var text = searchText();
@@ -39,6 +76,7 @@ var searchResults = synchronize([], ko.computed(function() {
         query = $.get("fetch?type=" + text.substr(0, bar) + 
                       "&name=" + encodeURIComponent(text.substr(bar + 1)));
     }
+    
     return query.then(function(results) {
         return Object.keys(results).map(function(indexName) {
             var indexHits = results[indexName];
@@ -47,22 +85,32 @@ var searchResults = synchronize([], ko.computed(function() {
                 hits: indexHits.map(function(hit) {
                     return {
                         caption: hit.value,
-                        imageSource: hit.coverart 
+                        imageSource: hit.coverart
                             ? "coverart?name=" + encodeURIComponent(hit.coverart)
                             : "missingart.png",
-                        link: "#" + (hit.id 
-                            ? "id|" + hit.id 
-                            : indexName + "|" + encodeURIComponent(hit.value))
+                        link: "#" + (hit.id
+                            ? "id|" + hit.id
+                            : indexName + "|" + encodeURIComponent(hit.value)),
+                        play: hit.id 
+                            ? function() { queue(hit); } 
+                            : indexName === "album" 
+                                ? function() { queueAlbum(hit); } 
+                                : null
                     };
                 })
             };
         });
     });
-}).extend({ throttle: 200 }));
+}));
 
 var viewModel = {
-    searchText: searchText,
-    searchResults: searchResults
+    searchText: editableSearchText,
+    searchResults: searchResults,
+    nowPlaying: nowPlaying,
+    playerQueue: playerQueue,
+    playNext: function() {
+        nowPlaying(playerQueue.shift());
+    }
 };
 
 ko.applyBindings(viewModel);

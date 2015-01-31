@@ -1,4 +1,5 @@
 <html>
+
 <head>
     <script type="text/javascript" src="jquery-2.1.3.min.js"></script>
     <script type="text/javascript" src="knockout-3.2.0.js"></script>
@@ -8,19 +9,61 @@
         font-family: Helvetica;
         font-size: 20px;
     }
-    .search, .results {
-        text-align: center;
+    
+    .library, .playing {
+        position: absolute;
+        top: 0;
+        bottom: 0;
     }
+    
+    .library {
+        left: 0;
+        width: 50%;
+    }
+    
+    .playing {
+        right: 0;
+        width: 50%;
+    }
+
+    .padding {
+        padding: 20px;        
+    }
+    
+    .library .search, .library .results {
+        position: absolute;
+        left: 20px;
+        right: 10px;
+    }
+    
+    .library .search {
+        top: 10px;
+        height: 50px;
+    }
+    
+    .library .results {
+        top: 50px;
+        bottom: 10px;
+        overflow: auto;
+    }
+    
+    .search input {
+        width: 100%;
+    }
+    
     .index {
-        display: inline-block;
         vertical-align: top;
-        margin: 8px;
+        margin: 0px;        
     }
+    
+    .indexName {
+        font-weight: bold;
+        border-bottom: 1px solid gray;
+        margin-top: 20px;
+    }
+    
     .hit {
         margin: 3px;
-        padding: 4px;
-        border: 1px solid silver;
-        background: #e0f1ff;
         text-align: left;
     }
     
@@ -33,36 +76,101 @@
         color: gray;
     }
     
-    .hit > a > * {
+    .hit *, .queueItem > * {
         vertical-align: middle;
     }
-    .hit img {
+    .hit .cover, .queueItem .cover {
         width: 32px;
         height: 32px;
         margin-right: 8px;
+        border: 1px solid silver;
     }
+    
+    .play {
+        width: 32px;
+        height: 32px;
+        cursor: pointer;
+    }
+    
+    .player {
+    }
+    
+    .player .cover {
+        width: 96px;
+        height: 96px;
+        border: 1px solid silver;
+        margin-right: 10px;
+    }
+    
+    .queue {
+        clear: left;
+        margin-top: 20px;
+    }
+    
+    img.remove {
+        width: 23px;
+        height: 23px;
+    }
+    
     </style>
         
 </head>
+
 <body>
-    <div class="search">
-        <input type="text" data-bind="textInput: searchText"></input>
-    </div>  
     
-    <div class="results" data-bind="foreach: searchResults">
-        <div class="index">
-            <div data-bind="text: index"></div>                
-            <div data-bind="foreach: hits">
-                <div class="hit">
-                    <a data-bind="attr: { href: link }">
-                        <img data-bind="attr: { src: imageSource }">
-                        <span data-bind="text: caption"></span>
-                    </a>
+    <div class="library">
+        <div class="search">
+            <input type="text" data-bind="textInput: searchText">
+        </div>
+        <div class="results" data-bind="foreach: searchResults">
+            <div class="index">
+                <div class="indexName" data-bind="text: index"></div>                
+                <div class="hits" data-bind="foreach: hits">
+                    <div class="hit">
+                        <img class="cover" data-bind="attr: { src: imageSource }">
+                        <!-- ko if: $data.play -->
+                        <img class="play" title="Play" src="play.png" data-bind="click: play">
+                        <!-- /ko -->
+                        <a data-bind="attr: { href: link }, text: caption"></a>
+                    </div>
                 </div>
             </div>
-        <div>
+        </div>
+    </div>
+
+    <div class="playing">
+        <div class="padding">
+            <!-- ko if: nowPlaying -->
+            <div class="player">                
+                <table>
+                    <tr>
+                        <td><img class="cover" data-bind="attr: { src: nowPlaying().imageSource }"></td>
+                        <td>
+                            <div data-bind="text: nowPlaying().title"></div>                    
+                            <div data-bind="text: nowPlaying().album"></div>
+                            <div data-bind="text: nowPlaying().artist"></div>
+                            <div>
+                                <audio autoplay="true" 
+                                       controls 
+                                       data-bind="attr: { src: nowPlaying().stream }, event: { ended: playNext }">
+                                </audio>
+                                <img class="remove" src="delete.png" title="Skip" data-bind="click: playNext">
+                            </div>
+                        </td>
+                    </tr>                    
+                </table>
+            </div>
+            <!-- /ko -->
+            <div class="queue" data-bind="foreach: playerQueue">
+                <div class="queueItem">
+                    <img class="cover" data-bind="attr: { src: imageSource }">
+                    <span data-bind="text: caption"></span>                    
+                </div>
+            </div>
+        </div>
     </div>
     
     <script type="text/javascript" src="index.js"></script>
 </body>
+
 </html>
