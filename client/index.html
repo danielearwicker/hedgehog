@@ -1,8 +1,8 @@
 <html>
 
 <head>
-    <script type="text/javascript" src="jquery-2.1.3.min.js"></script>
-    <script type="text/javascript" src="knockout-3.2.0.js"></script>
+    <script type="text/javascript" src="lib/jquery-2.1.3.min.js"></script>
+    <script type="text/javascript" src="lib/knockout-3.2.0.js"></script>
 
     <style>
     div, span, input {
@@ -120,7 +120,7 @@
     
     <div class="library">
         <div class="search">
-            <input type="text" data-bind="textInput: searchText">
+            <input type="text" data-bind="textInput: editableSearchText">
         </div>
         <div class="results" data-bind="foreach: searchResults">
             <div class="index">
@@ -129,7 +129,7 @@
                     <div class="hit">
                         <img class="cover" data-bind="attr: { src: imageSource }">
                         <!-- ko if: $data.play -->
-                        <img class="play" title="Play" src="play.png" data-bind="click: play">
+                        <img class="play" title="Play" src="img/play.png" data-bind="click: play">
                         <!-- /ko -->
                         <a data-bind="attr: { href: link }, text: caption"></a>
                     </div>
@@ -154,7 +154,7 @@
                                        controls 
                                        data-bind="attr: { src: nowPlaying().stream }, event: { ended: playNext }">
                                 </audio>
-                                <img class="remove" src="delete.png" title="Skip" data-bind="click: playNext">
+                                <img class="remove" src="img/delete.png" title="Skip" data-bind="click: playNext">
                             </div>
                         </td>
                     </tr>                    

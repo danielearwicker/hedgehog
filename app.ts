@@ -216,6 +216,7 @@ app.use(bodyParser.json());
 function api(name: string, func: (query: any, req: Express.Request) => any) {
     app.get("/" + name, function(req, res) {
         var result = func(req.query, req);
+        console.log(name, result);
         res.set("Content-Type", "application/json");
         res.send(JSON.stringify(result, null, 2));
     });
@@ -242,20 +243,6 @@ interface ResultsMaker {
     (indexName: string, add: (value: string, coverart: string, item?: Metadata) => boolean): void;
 }
 
-interface Hit {
-    value: string;
-    coverart: string;
-    
-    id?: number;
-    album?: string;
-    artist?: string;
-    title?: string;
-}
-
-interface Results {
-    [indexName: string]: Hit;
-}
-
 interface PagingOptions {
     skip?: string;
     take?: string;
@@ -264,7 +251,7 @@ interface PagingOptions {
 function makeIndexResults(indexName: string, args: PagingOptions, handler: ResultsMaker) {
         
     var skip = parseInt(args.skip || "0", 10), take = parseInt(args.take || "100", 10);
-    var hits: Hit[] = [];
+    var hits: Spiny.Hit[] = [];
     
     handler(indexName, function(value, coverart, item) {
         if (skip > 0) {
@@ -276,7 +263,7 @@ function makeIndexResults(indexName: string, args: PagingOptions, handler: Resul
         }
         take--;
 
-        var result: Hit = { value: value, coverart: coverart };
+        var result: Spiny.Hit = { value: value, coverart: coverart };
         
         if (item) {
             result.id = item.id;
@@ -292,13 +279,18 @@ function makeIndexResults(indexName: string, args: PagingOptions, handler: Resul
     return hits.length > 0 ? hits : null;
 }
 
-function makeResults(args: PagingOptions, handler: ResultsMaker) {
-    return {
-        genre: makeIndexResults("genre", args, handler),
-        artist: makeIndexResults("artist", args, handler),
-        album: makeIndexResults("album", args, handler), 
-        title: makeIndexResults("title", args, handler)
-    };
+function makeResults(args: PagingOptions, handler: ResultsMaker): Spiny.Results {
+    
+    var results: Spiny.Results;
+    
+    ["genre", "artist", "album", "title"].forEach(indexName => {
+        var hits = makeIndexResults(indexName, args, handler);
+        if (hits.length !== 0) {
+            results[indexName] = hits;
+        }     
+    });   
+    
+    return results;
 }
 
 api("fetch", function(args) {
