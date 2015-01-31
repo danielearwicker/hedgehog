@@ -1,5 +1,3 @@
-
-
 var express = require("express");
 var bodyParser = require("body-parser");
 var xml = require("./xml.js");
@@ -7,6 +5,7 @@ var fs = require("fs");
 var path = require("path");
 var musicmetadata = require("musicmetadata");
 var mime = require("mime");
+var ProgressBar = require("progress");
 
 function recurseFiles(p, each, done) {
     fs.stat(p, function(err, s) {
@@ -67,8 +66,12 @@ fs.readFile(metabaseFile, function(err, metabaseJson) {
 
     console.log("Cross-referencing with " + loadedMetabase.length + " items...");
     var metabaseByPath = {};
+    
+    var bar = new ProgressBar(':bar', { total: loadedMetabase.length });
+    
     loadedMetabase.forEach(function(item) {
         try {
+            bar.tick();
             var s = fs.statSync(path.join(libraryPath, item.path));
             if (s) {
                 var modified = s.mtime.toISOString();

@@ -12,6 +12,7 @@
     "body-parser": "^1.10.0",
     "express": "^4.10.6",
     "mime": "^1.2.11",
+    "progress": "^1.1.8",
     "xmldom": "^0.1.19"
   },
   "repository": {
