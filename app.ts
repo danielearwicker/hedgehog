@@ -3,42 +3,10 @@ import bodyParser = require("body-parser");
 import xml = require("./xml");
 import fs = require("fs");
 import path = require("path");
-import musicmetadata = require("musicmetadata");
 import mime = require("mime");
 import ProgressBar = require("progress");
-
-type Done = () => void;
-type FileHandler = (filePath: string, done: Done) => void;
-
-function recurseFiles(p: string, each: FileHandler, done: Done) {
-    fs.stat(p, function(err, s) {
-        if (!err && s.isDirectory()) {
-            fs.readdir(p, function(err, ar) {
-                if (err) {
-                    console.log(err);
-                    done();
-                    return;
-                }
-                var n = 0;
-                function step() {
-                    if (n === ar.length) {
-                        done();
-                    } else {
-                        var child = ar[n++];
-                        if (child[0] !== ".") {
-                            recurseFiles(path.join(p, child), each, step);
-                        } else {
-                            step();
-                        }
-                    }
-                }
-                step();
-            });
-        } else {
-            each(p, done);
-        }
-    });
-}
+import readDir = require("./readDir");
+import getMetadata = require("./getMetadata");
 
 var metabasePath = path.join(__dirname, "metabase");
 if (!fs.existsSync(metabasePath)) {
@@ -51,7 +19,6 @@ if (!fs.existsSync(coverartPath)) {
 }
 
 var libraryPath = process.argv[2];
-
 if (!libraryPath) {
     throw new Error("No library path specified");
 }
@@ -80,6 +47,11 @@ function forValuesIn(item: any, property: string, handler: (val: any) => void) {
     }
 }
 
+function relativePath(wholePath: string, parentPath: string) {
+    var relPath = wholePath.substr(parentPath.length);
+    return relPath[0] === "/" ? relPath.substr(1) : relPath;
+}
+
 console.log("Loading metabase...");
 fs.readFile(metabaseFile, 'utf8', function(err, metabaseJson) {
 
@@ -89,9 +61,11 @@ fs.readFile(metabaseFile, 'utf8', function(err, metabaseJson) {
 
     console.log("Cross-referencing with " + loadedMetabase.length + " items...");
     var metabaseByPath: { [pathString: string]: Metadata } = {};
-    
-    var bar = new ProgressBar(':bar', { total: loadedMetabase.length });
-    
+
+    var bar = new ProgressBar(':bar', { total: loadedMetabase.length, width: 40 });
+
+    var removed: string[] = [];
+
     loadedMetabase.forEach(function(item) {
         try {
             bar.tick();
@@ -100,89 +74,86 @@ fs.readFile(metabaseFile, 'utf8', function(err, metabaseJson) {
                 var modified = s.mtime.toISOString();
                 if (modified === item.modified) {
                     metabaseByPath[item.path] = item;
-                } else {
-                    changes = true;
-                }
-            } else {
-                changes = true;
-            }
+                    return;
+                } 
+            } 
         } catch (x) {
-            // Ignore exceptions, probably file has disappeared
-            console.log("Disappeared: " + item.path);
-            changes = true;
+            // Ignore exceptions, probably file has disappeared            
         }
+        removed.push(item.path);
     });
 
-    console.log("Scanning library for changes...");
-    recurseFiles(libraryPath, function(filePath, done) {
-        var relPath = filePath.substr(libraryPath.length);
-        if (relPath[0] === "/") {
-            relPath = relPath.substr(1);
-        }
-        if (metabaseByPath[relPath]) {
-            done();
-            return;
-        }
-        console.log("Detected: " + relPath);
-        changes = true;
-        var parser = musicmetadata(fs.createReadStream(filePath));
-        var metadata: MusicMetadata.Metadata;
-        parser.on("metadata", function(result) {
-            metadata = result;
-        });
-        parser.on("done", function(ex) {
-            var expandedMetadata: Metadata = <Metadata>metadata;
+    if (removed.length !== 0) {
+        console.log("\n" + removed.length + " files were missing");
+    }
+    
+    console.log("\nScanning library for new or modified files...");
+    
+    readDir(libraryPath).then(files => {
+        
+        bar = new ProgressBar("[:bar] :current/:total", { total: files.length, width: 40 });
+        
+        files = files.filter(f => !metabaseByPath[relativePath(f, libraryPath)]);        
+        return files.length === 0 
+            ? changes 
+            : files.reduce((all, filePath) => all.then(() => getMetadata(filePath)).then(metadata => {
+
+            bar.tick();
+
+            var relPath = relativePath(filePath, libraryPath);
             
-            var finish = function () {
+            var fullData: Metadata = <Metadata>metadata;
+            fullData.path = relPath;
+
+            var pictureData = metadata.picture && metadata.picture[0];
+            delete metadata.picture;
+
+            if (!pictureData) {
+                return fullData;
+            }
+
+            // Only keep one image per folder, as this is almost always correct
+            var imageName = path.dirname(relPath).replace(/[\\\/]/g, "_");
+            imageName += "." + pictureData.format;
+            var imagePath = path.join(coverartPath, imageName);
+
+            return new Promise<Metadata>((done, fail) => {                
+                fs.exists(imagePath, function(exists) {
+                    if (exists) {
+                        fullData.coverart = imageName;
+                        done(fullData);
+                    } else {
+                        fs.writeFile(imagePath, pictureData.data, function (err) {
+                            if (!err) {
+                                fullData.coverart = imageName;
+                                done(fullData);
+                            } else {
+                                fail(err);
+                            }
+                        });
+                    }
+                });
+            });
+            
+        }).then(fullData => {
+
+            return new Promise<void>((done, fail) => {
                 fs.stat(filePath, function(err, s) {
                     if (!err) {
-                        expandedMetadata.modified = s.mtime.toISOString();
-                        expandedMetadata.path = relPath;
-                        metabaseByPath[relPath] = expandedMetadata;
+                        fullData.modified = s.mtime.toISOString();                        
+                        metabaseByPath[fullData.path] = fullData;
+                        done();
+                    } else {
+                        fail(err);
                     }
-                    done();
                 });
-            };
-            if (ex || !metadata) {
-                // Fake metadata from some assumptions about the path
-                var albumPath = path.dirname(relPath),
-                    artistPath = path.dirname(albumPath);            
-                expandedMetadata = <Metadata>{
-                    album: path.basename(albumPath),
-                    artist: [path.basename(artistPath)],
-                    title: path.basename(relPath)
-                };
-                finish();
-            } else {             
-                var pictureData = metadata.picture && metadata.picture[0];
-                if (pictureData) {
-                    delete metadata.picture;
+            });
 
-                    // Only keep one image per folder, as this is almost always correct
-                    var imageName = path.dirname(relPath).replace(/[\\\/]/g, "_");
-                    imageName += "." + pictureData.format;
-                    var imagePath = path.join(coverartPath, imageName);
+        }), Promise.resolve<void>()).then(() => true)
 
-                    fs.exists(imagePath, function(exists) {
-                        if (exists) {
-                            expandedMetadata.coverart = imageName;
-                            finish();
-                        } else {
-                            fs.writeFile(imagePath, pictureData.data, function (err) {
-                                if (!err) {
-                                    expandedMetadata.coverart = imageName;
-                                }
-                                finish();
-                            });
-                        }
-                    });
-                } else {
-                    finish();
-                }
-            }
-        });
-    }, function() {
-        console.log("Compiling metabase...");
+    }).then(changes => {
+
+        console.log("\nCompiling metabase...");
         for (var relPath in metabaseByPath) {
             var item = metabaseByPath[relPath];
             metabase.push(item);            
@@ -191,22 +162,21 @@ fs.readFile(metabaseFile, 'utf8', function(err, metabaseJson) {
                 forValuesIn(item, key, val => {
                     var contents = index[val] || (index[val] = []);
                     contents.push(item);
-                });                
+                });
             });
         }
 
         if (changes) {
             console.log("Saving updated metabase...");                    
-            fs.writeFileSync(metabaseFile, JSON.stringify(metabase, null, 4));
+            fs.writeFile(metabaseFile, JSON.stringify(metabase, null, 4), err => console.log(err));
         }
-        
+
         console.log("Assigning IDs");
-        metabase.forEach(function(item, id) {
-            item.id = id;
-        });
-        
+        metabase.forEach((item, id) => item.id = id);
+
         console.log("Up to date");
-    });
+        
+    }).catch(er => console.log(er));    
 });
 
 var app = express();
