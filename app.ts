@@ -248,43 +248,38 @@ interface PagingOptions {
     take?: string;
 }
 
-function makeIndexResults(indexName: string, args: PagingOptions, handler: ResultsMaker) {
-        
-    var skip = parseInt(args.skip || "0", 10), take = parseInt(args.take || "100", 10);
-    var hits: Spiny.Hit[] = [];
-    
-    handler(indexName, function(value, coverart, item) {
-        if (skip > 0) {
-            skip--;
-            return true;
-        }
-        if (take <= 0) {
-            return false;
-        }
-        take--;
-
-        var result: Spiny.Hit = { value: value, coverart: coverart };
-        
-        if (item) {
-            result.id = item.id;
-            result.album = item.album;
-            result.artist = item.artist[0];
-            result.title = item.title[0];                
-        }
-
-        hits.push(result);
-        return take > 0;
-    });
-    
-    return hits.length > 0 ? hits : null;
-}
-
 function makeResults(args: PagingOptions, handler: ResultsMaker): Spiny.Results {
     
-    var results: Spiny.Results;
+    var results: Spiny.Results = {};
     
     ["genre", "artist", "album", "title"].forEach(indexName => {
-        var hits = makeIndexResults(indexName, args, handler);
+        
+        var skip = parseInt(args.skip || "0", 10), take = parseInt(args.take || "100", 10);
+        var hits: Spiny.Hit[] = [];
+    
+        handler(indexName, function(value, coverart, item) {
+            if (skip > 0) {
+                skip--;
+                return true;
+            }
+            if (take <= 0) {
+                return false;
+            }
+            take--;
+    
+            var result: Spiny.Hit = { value: value, coverart: coverart };
+            
+            if (item) {
+                result.id = item.id;
+                result.album = item.album;
+                result.artist = item.artist[0];
+                result.title = item.title[0];                
+            }
+    
+            hits.push(result);
+            return take > 0;
+        });
+
         if (hits.length !== 0) {
             results[indexName] = hits;
         }     
