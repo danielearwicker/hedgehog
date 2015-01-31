@@ -1,12 +1,11 @@
 var dom = new (require('xmldom').DOMImplementation)();
-
 function xml(tree, node) {
-    var doc = node ? node.ownerDocument : dom.createDocument();    
+    var doc = node ? node.ownerDocument : dom.createDocument();
     if (!node) {
         node = doc;
     }
     if (Array.isArray(tree)) {
-        tree.forEach(function(item) {
+        tree.forEach(function (item) {
             xml(item, node);
         });
         return null;
@@ -16,18 +15,20 @@ function xml(tree, node) {
         return null;
     }
     if (tree && typeof tree === "object") {
-        Object.keys(tree).forEach(function(key) {
+        Object.keys(tree).forEach(function (key) {
             if (key[0] === "$") {
                 var attr = doc.createAttribute(key.substr(1));
                 attr.value = tree[key].toString();
                 node.attributes.setNamedItem(attr);
-            } else {
+            }
+            else {
                 var elem = doc.createElement(key);
                 node.appendChild(elem);
                 var val = tree[key];
                 if (typeof val === "string") {
                     elem.appendChild(doc.createTextNode(val));
-                } else {
+                }
+                else {
                     xml(val, elem);
                 }
             }
@@ -36,5 +37,4 @@ function xml(tree, node) {
     }
     return null;
 }
-
 module.exports = xml;

@@ -1,16 +1,15 @@
 var express = require("express");
 var bodyParser = require("body-parser");
-var xml = require("./xml.js");
+var xml = require("./xml");
 var fs = require("fs");
 var path = require("path");
 var musicmetadata = require("musicmetadata");
 var mime = require("mime");
 var ProgressBar = require("progress");
-
 function recurseFiles(p, each, done) {
-    fs.stat(p, function(err, s) {
+    fs.stat(p, function (err, s) {
         if (!err && s.isDirectory()) {
-            fs.readdir(p, function(err, ar) {
+            fs.readdir(p, function (err, ar) {
                 if (err) {
                     console.log(err);
                     done();
@@ -20,56 +19,58 @@ function recurseFiles(p, each, done) {
                 function step() {
                     if (n === ar.length) {
                         done();
-                    } else {
+                    }
+                    else {
                         var child = ar[n++];
                         if (child[0] !== ".") {
                             recurseFiles(path.join(p, child), each, step);
-                        } else {
+                        }
+                        else {
                             step();
                         }
                     }
                 }
                 step();
             });
-        } else {
+        }
+        else {
             each(p, done);
         }
     });
 }
-
 var metabasePath = path.join(__dirname, "metabase");
 if (!fs.existsSync(metabasePath)) {
     fs.mkdirSync(metabasePath);
 }
-
 var coverartPath = path.join(metabasePath, "coverart");
 if (!fs.existsSync(coverartPath)) {
     fs.mkdirSync(coverartPath);
 }
-
 var libraryPath = process.argv[2];
-
 if (!libraryPath) {
     throw new Error("No library path specified");
 }
-
 var metabaseFile = path.join(metabasePath, "metabase.json");
 var metabase = [];
 var indices = {};
-
+function forValuesIn(item, property, handler) {
+    var vals = item[property];
+    if (!Array.isArray(vals)) {
+        handler(vals);
+    }
+    else {
+        vals.forEach(handler);
+    }
+}
 console.log("Loading metabase...");
-fs.readFile(metabaseFile, function(err, metabaseJson) {
-
+fs.readFile(metabaseFile, 'utf8', function (err, metabaseJson) {
     console.log("Parsing metabase...");
     var loadedMetabase = err ? [] : JSON.parse(metabaseJson);
     var changes = !!err;
-
     console.log("Cross-referencing with " + loadedMetabase.length + " items...");
     var metabaseByPath = {};
-    
     var bar = new ProgressBar(':bar', { total: loadedMetabase.length });
-    
-    loadedMetabase.forEach(function(item) {
+    loadedMetabase.forEach(function (item) {
         try {
             bar.tick();
             var s = fs.statSync(path.join(libraryPath, item.path));
@@ -77,21 +78,23 @@ fs.readFile(metabaseFile, function(err, metabaseJson) {
                 var modified = s.mtime.toISOString();
                 if (modified === item.modified) {
                     metabaseByPath[item.path] = item;
-                } else {
+                }
+                else {
                     changes = true;
                 }
-            } else {
+            }
+            else {
                 changes = true;
             }
-        } catch (x) {
+        }
+        catch (x) {
             // Ignore exceptions, probably file has disappeared
             console.log("Disappeared: " + item.path);
             changes = true;
         }
     });
-
     console.log("Scanning library for changes...");
-    recurseFiles(libraryPath, function(filePath, done) {
+    recurseFiles(libraryPath, function (filePath, done) {
         var relPath = filePath.substr(libraryPath.length);
         if (relPath[0] === "/") {
             relPath = relPath.substr(1);
@@ -104,184 +107,156 @@ fs.readFile(metabaseFile, function(err, metabaseJson) {
         changes = true;
         var parser = musicmetadata(fs.createReadStream(filePath));
         var metadata;
-        parser.on("metadata", function(result) {
+        parser.on("metadata", function (result) {
             metadata = result;
         });
-        parser.on("done", function(ex) {
+        parser.on("done", function (ex) {
+            var expandedMetadata = metadata;
             var finish = function () {
-                fs.stat(filePath, function(err, s) {
+                fs.stat(filePath, function (err, s) {
                     if (!err) {
-                        metadata.modified = s.mtime.toISOString();
-                        metadata.path = relPath;
-                        metabaseByPath[relPath] = metadata;
+                        expandedMetadata.modified = s.mtime.toISOString();
+                        expandedMetadata.path = relPath;
+                        metabaseByPath[relPath] = expandedMetadata;
                     }
                     done();
                 });
             };
             if (ex || !metadata) {
                 // Fake metadata from some assumptions about the path
-                var albumPath = path.dirname(relPath),
-                    artistPath = path.dirname(albumPath);            
-                metadata = {
+                var albumPath = path.dirname(relPath), artistPath = path.dirname(albumPath);
+                expandedMetadata = {
                     album: path.basename(albumPath),
-                    artist: path.basename(artistPath),
+                    artist: [path.basename(artistPath)],
                     title: path.basename(relPath)
                 };
                 finish();
-            } else {             
+            }
+            else {
                 var pictureData = metadata.picture && metadata.picture[0];
                 if (pictureData) {
                     delete metadata.picture;
-
                     // Only keep one image per folder, as this is almost always correct
                     var imageName = path.dirname(relPath).replace(/[\\\/]/g, "_");
                     imageName += "." + pictureData.format;
                     var imagePath = path.join(coverartPath, imageName);
-
-                    fs.exists(imagePath, function(exists) {
+                    fs.exists(imagePath, function (exists) {
                         if (exists) {
-                            metadata.coverart = imageName;
+                            expandedMetadata.coverart = imageName;
                             finish();
-                        } else {
+                        }
+                        else {
                             fs.writeFile(imagePath, pictureData.data, function (err) {
                                 if (!err) {
-                                    metadata.coverart = imageName;
+                                    expandedMetadata.coverart = imageName;
                                 }
                                 finish();
                             });
                         }
                     });
-                } else {
+                }
+                else {
                     finish();
                 }
             }
         });
-    }, function() {
+    }, function () {
         console.log("Compiling metabase...");
         for (var relPath in metabaseByPath) {
             var item = metabaseByPath[relPath];
             metabase.push(item);
-            
-            Object.keys(item).forEach(function(key) {
+            Object.keys(item).forEach(function (key) {
                 var index = indices[key] || (indices[key] = {});
-                var vals = item[key];
-                vals = Array.isArray(vals) ? vals : [vals];
-                vals.forEach(function(val) {
+                forValuesIn(item, key, function (val) {
                     var contents = index[val] || (index[val] = []);
                     contents.push(item);
                 });
             });
         }
-
         if (changes) {
-            console.log("Saving updated metabase...");                    
+            console.log("Saving updated metabase...");
             fs.writeFileSync(metabaseFile, JSON.stringify(metabase, null, 4));
         }
-        
         console.log("Assigning IDs");
-        metabase.forEach(function(item, id) {
+        metabase.forEach(function (item, id) {
             item.id = id;
         });
-        
         console.log("Up to date");
     });
 });
-
 var app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
-
 function api(name, func) {
-    app.get("/" + name, function(req, res) {
+    app.get("/" + name, function (req, res) {
         var result = func(req.query, req);
         res.set("Content-Type", "application/json");
         res.send(JSON.stringify(result, null, 2));
     });
 }
-
-app.get("/coverart", function(req, res) {
-    var p = path.join(coverartPath, req.query.name);  
+app.get("/coverart", function (req, res) {
+    var p = path.join(coverartPath, req.query.name);
     res.setHeader("Content-Type", mime.lookup(p));
-    fs.createReadStream(p).pipe(res);    
+    fs.createReadStream(p).pipe(res);
 });
-
-app.get("/stream", function(req, res) {
+app.get("/stream", function (req, res) {
     var item = metabase[req.query.id];
     if (!item) {
         res.status(500).send('Bad id');
-    } else {
+    }
+    else {
         var p = path.join(libraryPath, item.path);
         res.setHeader("Content-Type", mime.lookup(p));
         fs.createReadStream(p).pipe(res);
     }
 });
-
-var mainIndexNames = ["genre", "artist", "album", "title"];
-
-function makeResults(args, handler) {
-    var results = {};
-    
-    mainIndexNames.forEach(function(indexName) {
-        
-        var skip = parseInt(args.skip || "0", 10), take = parseInt(args.take || "100", 10);
-        var hits = [];
-        
-        handler(indexName, function(value, coverart, item) {
-            if (skip > 0) {
-                skip--;
-                return true;
-            }
-            if (take <= 0) {
-                return false;
-            }
-            take--;
-
-            var result = { value: value, coverart: coverart };
-            if (item) {
-                ["id", "album", "artist", "title"].forEach(function(property) {
-                    var vals = item[property];
-                    result[property] = Array.isArray(vals) ? vals[0] : vals;
-                });
-            }
-
-            hits.push(result);
-            return take > 0;
-        });
-        
-        if (hits.length > 0) {
-            results[indexName] = hits;
+function makeIndexResults(indexName, args, handler) {
+    var skip = parseInt(args.skip || "0", 10), take = parseInt(args.take || "100", 10);
+    var hits = [];
+    handler(indexName, function (value, coverart, item) {
+        if (skip > 0) {
+            skip--;
+            return true;
         }
+        if (take <= 0) {
+            return false;
+        }
+        take--;
+        var result = { value: value, coverart: coverart };
+        if (item) {
+            result.id = item.id;
+            result.album = item.album;
+            result.artist = item.artist[0];
+            result.title = item.title[0];
+        }
+        hits.push(result);
+        return take > 0;
     });
-    
-    return results;
+    return hits.length > 0 ? hits : null;
 }
-
-function forValuesIn(item, property, handler) {
-    var vals = item[property];
-    if (!Array.isArray(vals)) {
-        handler(vals);
-    } else {
-        vals.forEach(handler);
-    }
+function makeResults(args, handler) {
+    return {
+        genre: makeIndexResults("genre", args, handler),
+        artist: makeIndexResults("artist", args, handler),
+        album: makeIndexResults("album", args, handler),
+        title: makeIndexResults("title", args, handler)
+    };
 }
-
-api("fetch", function(args) {
+api("fetch", function (args) {
     if (!args.type || !args.name) {
         throw new Error("Requires type, name parameters");
     }
-    
     if (args.type === "id") {
         var item = metabase[args.name];
         if (!item) {
             return {};
         }
-        return makeResults(args, function(indexName, add) {
-            forValuesIn(item, indexName, function(val) {
+        return makeResults(args, function (indexName, add) {
+            forValuesIn(item, indexName, function (val) {
                 add(val, item.coverart);
             });
         });
     }
-    
     var index = indices[args.type];
     if (!index) {
         return {};
@@ -290,11 +265,11 @@ api("fetch", function(args) {
     if (!items) {
         return {};
     }
-    return makeResults(args, function(indexName, add) {
-        var values = {};                
-        items.forEach(function(item) {
+    return makeResults(args, function (indexName, add) {
+        var values = {};
+        items.forEach(function (item) {
             var itemFolder = path.dirname(item.path);
-            forValuesIn(item, indexName, function(val) {
+            forValuesIn(item, indexName, function (val) {
                 var valKey = val;
                 if (indexName === "title") {
                     valKey += "/" + itemFolder;
@@ -304,32 +279,27 @@ api("fetch", function(args) {
                     add(val, item.coverart, indexName === "title" ? item : null);
                 }
             });
-        });         
+        });
     });
 });
-
-api("query", function(args) {
+api("query", function (args) {
     if (!args.value) {
         throw new Error("Requires value parameter");
     }
-
     var lowerVal = args.value.toLowerCase();
-    
-    return makeResults(args, function(indexName, add) {
+    return makeResults(args, function (indexName, add) {
         var index = indices[indexName];
-        
         for (var key in index) {
             if (key.toLowerCase().indexOf(lowerVal) !== -1) {
-
                 var items = index[key];
-
                 if (indexName === "title") {
-                    items.forEach(function(item) {
+                    items.forEach(function (item) {
                         add(key, item.coverart, item);
                     });
-                } else {
+                }
+                else {
                     var coverart;
-                    items.some(function(item) {
+                    items.some(function (item) {
                         return !!(coverart = item.coverart);
                     });
                     add(key, coverart);
@@ -338,9 +308,26 @@ api("query", function(args) {
         }
     });
 });
-
+function subsonic(name, func) {
+    var wrapper = function (args, req, res) {
+        func(args, req).then(function (data) {
+            var response = xml({ 'subsonic-response': data }).toString();
+            console.log('Response: ' + JSON.stringify(response, null, 4));
+            res.set('Content-Type', 'application/xml');
+            res.send(response);
+        }).catch(function (err) {
+            res.status(500).send(err.message);
+        });
+    };
+    name = '/rest/' + name + '.view';
+    app.get(name, function (req, res) {
+        wrapper(req.query, req, res);
+    });
+    app.post(name, function (req, res) {
+        wrapper(req.body, req, res);
+    });
+}
 app.use(express.static(__dirname + "/client"));
-
 var port = 3003;
 app.listen(port);
 console.log("Server running at http://127.0.0.1:" + port + "/");
